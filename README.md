@@ -42,6 +42,23 @@ func main() {
 }
 ```
 
+## Logging
+
+This library uses Go's structured logging (`log/slog`) for diagnostic messages. By default, no logs are emitted. To see library diagnostics (warnings about malformed Mach-O data, etc.), set up an slog handler in your application:
+
+```go
+import ("log/slog"
+	"os"
+)
+
+// Enable debug logging
+slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+	Level: slog.LevelWarn, // Or slog.LevelDebug for more verbose output
+})))
+```
+
+This allows you to control go-macho's logging output in your application without it polluting stdout by default.
+
 ## License
 
 MIT Copyright (c) 2020-2025 **blacktop**

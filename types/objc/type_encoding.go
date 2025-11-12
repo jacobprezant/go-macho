@@ -552,9 +552,15 @@ func decodeStructOrUnion(typ, kind string) string {
 }
 
 func skipFirstType(typStr string) string {
+	if len(typStr) == 0 {
+		return ""
+	}
 	i := 0
 	typ := []byte(typStr)
 	for {
+		if i >= len(typ) {
+			return ""
+		}
 		switch typ[i] {
 		case '+': /* gnu register */
 			fallthrough
@@ -585,36 +591,72 @@ func skipFirstType(typStr string) string {
 				i++ /* Blocks */
 			} else if i+1 < len(typ) && typ[i+1] == '"' {
 				i++
-				for typ[i+1] != '"' {
+				for i+1 < len(typ) && typ[i+1] != '"' {
 					i++ /* Class */
 				}
 				i++
 			}
-			return string(typ[i+1:])
+			if i+1 <= len(typ) {
+				return string(typ[i+1:])
+			}
+			return ""
 		case '!': /* vectors */
 			i += 2
-			for typ[i] == ',' || typ[i] >= '0' && typ[i] <= '9' {
+			for i < len(typ) && (typ[i] == ',' || typ[i] >= '0' && typ[i] <= '9') {
 				i++
 			}
-			return string(typ[i+subtypeUntil(string(typ[i:]), ']')+1:])
+			if i < len(typ) {
+				skip := subtypeUntil(string(typ[i:]), ']')
+				if i+skip+1 <= len(typ) {
+					return string(typ[i+skip+1:])
+				}
+			}
+			return ""
 		case '[': /* arrays */
 			i++
-			for typ[i] >= '0' && typ[i] <= '9' {
+			for i < len(typ) && typ[i] >= '0' && typ[i] <= '9' {
 				i++
 			}
-			return string(typ[i+subtypeUntil(string(typ[i:]), ']')+1:])
+			if i < len(typ) {
+				skip := subtypeUntil(string(typ[i:]), ']')
+				if i+skip+1 <= len(typ) {
+					return string(typ[i+skip+1:])
+				}
+			}
+			return ""
 		case '{': /* structures */
 			i++
-			return string(typ[i+subtypeUntil(string(typ[i:]), '}')+1:])
+			if i < len(typ) {
+				skip := subtypeUntil(string(typ[i:]), '}')
+				if i+skip+1 <= len(typ) {
+					return string(typ[i+skip+1:])
+				}
+			}
+			return ""
 		case '(': /* unions */
 			i++
-			return string(typ[i+subtypeUntil(string(typ[i:]), ')')+1:])
+			if i < len(typ) {
+				skip := subtypeUntil(string(typ[i:]), ')')
+				if i+skip+1 <= len(typ) {
+					return string(typ[i+skip+1:])
+				}
+			}
+			return ""
 		case '<': /* block func prototype */
 			i++
-			return string(typ[i+subtypeUntil(string(typ[i:]), '>')+1:])
+			if i < len(typ) {
+				skip := subtypeUntil(string(typ[i:]), '>')
+				if i+skip+1 <= len(typ) {
+					return string(typ[i+skip+1:])
+				}
+			}
+			return ""
 		default: /* basic types */
 			i++
-			return string(typ[i:])
+			if i <= len(typ) {
+				return string(typ[i:])
+			}
+			return ""
 		}
 	}
 }

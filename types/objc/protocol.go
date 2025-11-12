@@ -2,6 +2,7 @@ package objc
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 )
 
@@ -86,6 +87,10 @@ func (p *Protocol) dump(verbose, addrs bool) string {
 	if len(p.ClassMethods) > 0 {
 		for _, meth := range p.ClassMethods {
 			if verbose {
+				if meth.Types == "" {
+					slog.Warn("protocol class method has empty type encoding", "method", meth.Name, "protocol", p.Name, "typesVMAddr", meth.TypesVMAddr)
+					continue
+				}
 				rtype, args := decodeMethodTypes(meth.Types)
 				cMethods += fmt.Sprintf("+ %s\n", getMethodWithArgs(meth.Name, rtype, args))
 			} else {
@@ -99,6 +104,10 @@ func (p *Protocol) dump(verbose, addrs bool) string {
 	if len(p.InstanceMethods) > 0 {
 		for _, meth := range p.InstanceMethods {
 			if verbose {
+				if meth.Types == "" {
+					slog.Warn("protocol instance method has empty type encoding", "method", meth.Name, "protocol", p.Name, "typesVMAddr", meth.TypesVMAddr)
+					continue
+				}
 				rtype, args := decodeMethodTypes(meth.Types)
 				iMethods += fmt.Sprintf("- %s\n", getMethodWithArgs(meth.Name, rtype, args))
 			} else {
@@ -126,6 +135,10 @@ func (p *Protocol) dump(verbose, addrs bool) string {
 	if len(p.OptionalInstanceMethods) > 0 {
 		for _, meth := range p.OptionalInstanceMethods {
 			if verbose {
+				if meth.Types == "" {
+					slog.Warn("protocol optional instance method has empty type encoding", "method", meth.Name, "protocol", p.Name, "typesVMAddr", meth.TypesVMAddr)
+					continue
+				}
 				rtype, args := decodeMethodTypes(meth.Types)
 				optMethods += fmt.Sprintf("- %s\n", getMethodWithArgs(meth.Name, rtype, args))
 			} else {

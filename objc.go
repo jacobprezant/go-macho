@@ -1225,16 +1225,23 @@ func (f *File) forEachObjCMethod(methodListVMAddr uint64, handler func(uint64, o
 					method.NameVMAddr = uint64(methodVMAddr + int64(m.NameOffset))
 				}
 			} else {
-				nameVMAddr := uint64(methodVMAddr + int64(m.NameOffset))
-				method.NameVMAddr, err = f.GetPointerAtAddress(nameVMAddr)
+				// RelativePointer offsets are relative to the field address, not the struct base
+				nameFieldAddr := uint64(methodVMAddr + int64(unsafe.Offsetof(m.NameOffset)))
+				nameIndirectAddr := uint64(int64(nameFieldAddr) + int64(m.NameOffset))
+				method.NameVMAddr, err = f.GetPointerAtAddress(nameIndirectAddr)
 				if err != nil {
 					return fmt.Errorf("failed to read relative_method_t name pointer: %v", err)
 				}
 			}
 
-			method.NameLocationVMAddr = uint64(methodVMAddr+int64(m.NameOffset)) + uint64(unsafe.Offsetof(m.NameOffset))
-			method.TypesVMAddr = uint64(methodVMAddr+int64(m.TypesOffset)) + uint64(unsafe.Offsetof(m.TypesOffset))
-			method.ImpVMAddr = uint64(methodVMAddr+int64(m.ImpOffset)) + uint64(unsafe.Offsetof(m.ImpOffset))
+			method.NameLocationVMAddr = uint64(methodVMAddr + int64(unsafe.Offsetof(m.NameOffset)))
+
+			// RelativePointer offsets are relative to the field address, not the struct base
+			// This matches Apple's objc4 RelativePointer implementation: actual_address = &offset_field + offset
+			typesFieldAddr := methodVMAddr + int64(unsafe.Offsetof(m.TypesOffset))
+			impFieldAddr := methodVMAddr + int64(unsafe.Offsetof(m.ImpOffset))
+			method.TypesVMAddr = uint64(typesFieldAddr + int64(m.TypesOffset))
+			method.ImpVMAddr = uint64(impFieldAddr + int64(m.ImpOffset))
 
 			method.Name, err = f.getCStringWithFallback(method.NameVMAddr, "selector", false)
 			if err != nil {
