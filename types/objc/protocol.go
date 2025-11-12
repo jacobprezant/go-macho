@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"unsafe"
 )
 
 const (
@@ -176,4 +177,24 @@ func (p *Protocol) Verbose() string {
 }
 func (p *Protocol) WithAddrs() string {
 	return p.dump(true, true)
+}
+
+// Computed offsets for optional tail fields to avoid magic numbers in parsers.
+var (
+	// Start offset where fields may not be present on disk.
+	ProtocolExtendedMethodTypesOffset = uint32(unsafe.Offsetof(ProtocolT{}.ExtendedMethodTypesVMAddr))
+	ProtocolDemangledNameOffset       = uint32(unsafe.Offsetof(ProtocolT{}.DemangledNameVMAddr))
+	ProtocolClassPropertiesOffset     = uint32(unsafe.Offsetof(ProtocolT{}.ClassPropertiesVMAddr))
+	protocolPointerSize               = uint32(unsafe.Sizeof(ProtocolT{}.ExtendedMethodTypesVMAddr))
+)
+
+// Helpers to check if optional fields are present based on on-disk size.
+func (p ProtocolT) HasExtendedMethodTypes() bool {
+	return p.Size >= ProtocolExtendedMethodTypesOffset+protocolPointerSize
+}
+func (p ProtocolT) HasDemangledName() bool {
+	return p.Size >= ProtocolDemangledNameOffset+protocolPointerSize
+}
+func (p ProtocolT) HasClassProperties() bool {
+	return p.Size >= ProtocolClassPropertiesOffset+protocolPointerSize
 }
