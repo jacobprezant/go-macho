@@ -56,6 +56,7 @@ type Protocol struct {
 
 func (p *Protocol) dump(verbose, addrs bool) string {
 	var props string
+	var cProps string
 	var optProps string
 	var cMethods string
 	var iMethods string
@@ -84,6 +85,34 @@ func (p *Protocol) dump(verbose, addrs bool) string {
 		}
 		if props != "" {
 			props += "\n"
+		}
+	}
+	if len(p.ClassProperties) > 0 {
+		for _, prop := range p.ClassProperties {
+			if verbose {
+				if attrs, optional := prop.Attributes(); !optional {
+					// Ensure "class" appears in the attribute list and retain trailing space
+					if attrs == "" {
+						attrs = "(class) "
+					} else {
+						inner := strings.TrimSuffix(strings.TrimPrefix(attrs, "("), ") ")
+						if inner == attrs { // fallback if format differs
+							inner = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(attrs, "("), ")"))
+						}
+						attrs = fmt.Sprintf("(class, %s) ", inner)
+					}
+					cProps += fmt.Sprintf("@property %s%s%s;\n", attrs, prop.Type(), prop.Name)
+				}
+			} else {
+				if prop.EncodedAttributes != "" {
+					cProps += fmt.Sprintf("@property (class, %s) %s;\n", prop.EncodedAttributes, prop.Name)
+				} else {
+					cProps += fmt.Sprintf("@property (class) %s;\n", prop.Name)
+				}
+			}
+		}
+		if cProps != "" {
+			cProps += "\n"
 		}
 	}
 	if len(p.ClassMethods) > 0 {
@@ -134,6 +163,29 @@ func (p *Protocol) dump(verbose, addrs bool) string {
 			optProps += "\n"
 		}
 	}
+	if len(p.ClassProperties) > 0 {
+		for _, prop := range p.ClassProperties {
+			if verbose {
+				if attrs, optional := prop.Attributes(); optional {
+					if attrs == "" {
+						attrs = "(class) "
+					} else {
+						inner := strings.TrimSuffix(strings.TrimPrefix(attrs, "("), ") ")
+						if inner == attrs {
+							inner = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(attrs, "("), ")"))
+						}
+						attrs = fmt.Sprintf("(class, %s) ", inner)
+					}
+					optProps += fmt.Sprintf("@property %s%s%s;\n", attrs, prop.Type(), prop.Name)
+				}
+			} else {
+				// optProps += fmt.Sprintf("@property (%s) %s;\n", prop.EncodedAttributes, prop.Name)
+			}
+		}
+		if optProps != "" {
+			// leave trailing newline managed above
+		}
+	}
 	if len(p.OptionalInstanceMethods) > 0 {
 		for _, meth := range p.OptionalInstanceMethods {
 			if verbose {
@@ -154,7 +206,8 @@ func (p *Protocol) dump(verbose, addrs bool) string {
 	return fmt.Sprintf(
 		"%s\n\n"+
 			"@required\n\n"+
-			"%s"+
+			"%s"+ // instance properties (required)
+			"%s"+ // class properties (required)
 			"%s"+
 			"%s"+
 			"@optional\n\n"+
@@ -163,6 +216,7 @@ func (p *Protocol) dump(verbose, addrs bool) string {
 			"@end\n",
 		protocol,
 		props,
+		cProps,
 		cMethods,
 		iMethods,
 		optProps,
