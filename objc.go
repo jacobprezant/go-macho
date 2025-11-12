@@ -1081,6 +1081,17 @@ func (f *File) getObjcProtocol(vmaddr uint64) (proto *objc.Protocol, err error) 
 		}
 	}
 
+	// Optional class properties (newer ABI)
+	if protoPtr.HasClassProperties() {
+		if protoPtr.ClassPropertiesVMAddr > 0 {
+			protoPtr.ClassPropertiesVMAddr = f.vma.Convert(protoPtr.ClassPropertiesVMAddr)
+			proto.ClassProperties, err = f.getObjCPropertiesWithSwift(protoPtr.ClassPropertiesVMAddr, false)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read class property vmaddr: %v", err)
+			}
+		}
+	}
+
 	proto.ProtocolT = protoPtr
 
 	return proto, nil

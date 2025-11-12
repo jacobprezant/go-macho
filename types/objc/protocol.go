@@ -45,6 +45,7 @@ type Protocol struct {
 	Prots                   []Protocol
 	InstanceMethods         []Method
 	InstanceProperties      []Property
+	ClassProperties         []Property
 	ClassMethods            []Method
 	OptionalInstanceMethods []Method
 	OptionalClassMethods    []Method
