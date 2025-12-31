@@ -1284,7 +1284,7 @@ func NewFile(r io.ReaderAt, config ...FileConfig) (*File, error) {
 			if err := binary.Read(b, bo, &led); err != nil {
 				return nil, fmt.Errorf("failed to read LC_FUNCTION_VARIANT_FIXUPS: %v", err)
 			}
-			l := new(FunctionVariants)
+			l := new(FunctionVariantFixups)
 			l.LoadBytes = cmddat
 			l.LoadCmd = cmd
 			l.Len = siz
@@ -1361,6 +1361,7 @@ func NewFile(r io.ReaderAt, config ...FileConfig) (*File, error) {
 			s.ReaderAt = f.sr
 		}
 	}
+
 	return f, nil
 }
 
@@ -1390,6 +1391,7 @@ func (f *File) parseSymtab(symdat, strtab, cmddat []byte, hdr *types.SymtabCmd, 
 			n.Value = uint64(n32.Value)
 		}
 		var name string
+		var indirectName string
 		if n.Name < uint32(len(strtab)) {
 			// We add "_" to Go symbols. Strip it here. See issue 33808.
 			name = cstring(strtab[n.Name:])
@@ -1397,12 +1399,19 @@ func (f *File) parseSymtab(symdat, strtab, cmddat []byte, hdr *types.SymtabCmd, 
 				name = name[1:]
 			}
 		}
+		if n.Type.IsIndirectSym() && n.Value < uint64(len(strtab)) {
+			indirectName = cstring(strtab[n.Value:])
+			if strings.Contains(indirectName, ".") && indirectName[0] == '_' {
+				indirectName = indirectName[1:]
+			}
+		}
 		symtab = append(symtab, Symbol{
-			Name:  name,
-			Type:  n.Type,
-			Sect:  n.Sect,
-			Desc:  n.Desc,
-			Value: n.Value,
+			Name:         name,
+			IndirectName: indirectName,
+			Type:         n.Type,
+			Sect:         n.Sect,
+			Desc:         n.Desc,
+			Value:        n.Value,
 		})
 	}
 	st := new(Symtab)
@@ -2166,6 +2175,159 @@ func (f *File) FunctionStarts() *FunctionStarts {
 		}
 	}
 	return nil
+}
+
+// FunctionVariants returns the LC_FUNCTION_VARIANTS load command, or nil if none exists.
+func (f *File) FunctionVariants() *FunctionVariants {
+	for _, l := range f.Loads {
+		if fv, ok := l.(*FunctionVariants); ok {
+			return fv
+		}
+	}
+	return nil
+}
+
+// FunctionVariantFixups returns the LC_FUNCTION_VARIANT_FIXUPS load command, or nil if none exists.
+func (f *File) FunctionVariantFixups() *FunctionVariantFixups {
+	for _, l := range f.Loads {
+		if fv, ok := l.(*FunctionVariantFixups); ok {
+			return fv
+		}
+	}
+	return nil
+}
+
+// GetFunctionVariants parses and returns the function variants data.
+func (f *File) GetFunctionVariants() (*types.FuncVarData, error) {
+	fv := f.FunctionVariants()
+	if fv == nil {
+		return nil, fmt.Errorf("LC_FUNCTION_VARIANTS not found")
+	}
+
+	// Return cached data if already parsed
+	if fv.Data != nil {
+		f.resolveFunctionVariantSymbolsIfParsed(fv)
+		return fv.Data, nil
+	}
+
+	// Read the payload data
+	data := make([]byte, fv.Size)
+	if _, err := f.cr.ReadAt(data, int64(fv.Offset)); err != nil {
+		return nil, fmt.Errorf("failed to read function variants data: %v", err)
+	}
+
+	// Parse the data
+	parsed, err := ParseFunctionVariants(data, f.ByteOrder)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache the parsed data
+	fv.Data = parsed
+
+	f.resolveFunctionVariantSymbolsIfParsed(fv)
+
+	return parsed, nil
+}
+
+// GetFunctionVariantFixups parses and returns the function variant fixups data.
+func (f *File) GetFunctionVariantFixups() (*types.FuncVarFixupsData, error) {
+	fv := f.FunctionVariantFixups()
+	if fv == nil {
+		return nil, fmt.Errorf("LC_FUNCTION_VARIANT_FIXUPS not found")
+	}
+
+	// Return cached data if already parsed
+	if fv.Data != nil {
+		return fv.Data, nil
+	}
+
+	// Read the payload data
+	data := make([]byte, fv.Size)
+	if _, err := f.cr.ReadAt(data, int64(fv.Offset)); err != nil {
+		return nil, fmt.Errorf("failed to read function variant fixups data: %v", err)
+	}
+
+	// Parse the data
+	parsed, err := ParseFunctionVariantFixups(data, f.ByteOrder)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache the parsed data
+	fv.Data = parsed
+
+	return parsed, nil
+}
+
+// Enrich pre-parses optional data to add detail to load command stringers/JSON.
+// It is best-effort; any encountered errors are returned as a joined error.
+func (f *File) Enrich() error {
+	var errs []error
+
+	if f.DyldExportsTrie() != nil {
+		if _, err := f.DyldExports(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	if f.FunctionVariants() != nil {
+		if _, err := f.GetFunctionVariants(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	if f.FunctionVariantFixups() != nil {
+		if _, err := f.GetFunctionVariantFixups(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	if len(errs) == 0 {
+		return nil
+	}
+	return errors.Join(errs...)
+}
+
+func (f *File) resolveFunctionVariantSymbolsIfParsed(fv *FunctionVariants) {
+	if fv == nil || fv.Data == nil || len(fv.Data.Tables) == 0 {
+		return
+	}
+	if f.Symtab == nil && f.exp == nil {
+		return
+	}
+
+	addrToName := make(map[uint64]string)
+	if f.Symtab != nil {
+		addrToName = make(map[uint64]string, len(f.Symtab.Syms))
+		for _, sym := range f.Symtab.Syms {
+			if _, ok := addrToName[sym.Value]; !ok {
+				addrToName[sym.Value] = sym.Name
+			}
+		}
+	}
+	if f.exp != nil {
+		for _, exp := range f.exp {
+			if _, ok := addrToName[exp.Address]; !ok {
+				addrToName[exp.Address] = exp.Name
+			}
+		}
+	}
+
+	if len(addrToName) == 0 {
+		return
+	}
+	for i := range fv.Data.Tables {
+		for j := range fv.Data.Tables[i].Entries {
+			entry := &fv.Data.Tables[i].Entries[j]
+			if entry.IsTableIndex() || entry.Symbol != "" {
+				continue
+			}
+			if name, ok := addrToName[uint64(entry.ImplValue())]; ok {
+				entry.Symbol = name
+			}
+		}
+	}
 }
 
 func (f *File) GenerateFunctionStarts() ([]types.Function, error) {
