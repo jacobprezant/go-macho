@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"strings"
 	"time"
 )
@@ -128,6 +129,17 @@ func parseOctal(b []byte) uint64 {
 	return sum
 }
 
+func sanitizeArchiveName(name string) (string, error) {
+	cleaned := path.Clean(name)
+	if cleaned == "." {
+		return "", fmt.Errorf("cpio: invalid path %q", name)
+	}
+	if cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return "", fmt.Errorf("cpio: path traversal %q", name)
+	}
+	return cleaned, nil
+}
+
 func (r *Reader) init(rdr io.ReaderAt, size int64) error {
 	r.r = rdr
 	r.size = size
@@ -171,6 +183,12 @@ func (r *Reader) init(rdr io.ReaderAt, size int64) error {
 		}
 		offset += int64(nameSize)
 		name := string(nameBuf[:nameSize-1]) // Remove null terminator
+		name = strings.TrimPrefix(name, ".")
+		cleaned, err := sanitizeArchiveName(name)
+		if err != nil {
+			return err
+		}
+		name = cleaned
 
 		// Check for trailer
 		// The MKS cpio page says "TRAILER!!"
@@ -191,7 +209,7 @@ func (r *Reader) init(rdr io.ReaderAt, size int64) error {
 		}
 
 		// Add to files map using inode as key
-		r.Files[strings.TrimPrefix(name, ".")] = &File{
+		r.Files[name] = &File{
 			Info: FileInfo{
 				DeviceNo: parseOctal(header.Dev[:]),
 				Inode:    parseOctal(header.Ino[:]),
@@ -202,7 +220,7 @@ func (r *Reader) init(rdr io.ReaderAt, size int64) error {
 				RDev:     int(parseOctal(header.RDev[:])),
 				Mtime:    time.Unix(int64(int64(parseOctal(header.MTime[:]))), 0),
 			},
-			Name:   strings.TrimPrefix(name, "."),
+			Name:   name,
 			Size:   int64(fileSize),
 			offset: offset,
 			length: int64(fileSize),

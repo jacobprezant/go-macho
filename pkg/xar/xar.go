@@ -474,7 +474,10 @@ func (r *Reader) readXmlFileTree(xmlFile *xmlFile, dir string) (err error) {
 		return
 	}
 
-	xf.Name = path.Join(dir, xmlFile.Name)
+	xf.Name, err = sanitizeArchiveName(path.Join(dir, xmlFile.Name))
+	if err != nil {
+		return err
+	}
 
 	xf.Info, err = xmlFileToFileInfo(xmlFile)
 	if err != nil {
@@ -516,6 +519,17 @@ func (r *Reader) readXmlFileTree(xmlFile *xmlFile, dir string) (err error) {
 	}
 
 	return
+}
+
+func sanitizeArchiveName(name string) (string, error) {
+	cleaned := path.Clean(name)
+	if cleaned == "." {
+		return "", fmt.Errorf("xar: invalid path %q", name)
+	}
+	if cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return "", fmt.Errorf("xar: path traversal %q", name)
+	}
+	return cleaned, nil
 }
 
 // Open returns a ReadCloser that provides access to the file's
