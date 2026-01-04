@@ -123,7 +123,7 @@ func ParseCodeSignature(cmddat []byte) (*CodeSignature, error) {
 		case types.CSSLOT_CODEDIRECTORY:
 			fallthrough
 		case types.CSSLOT_ALTERNATE_CODEDIRECTORIES:
-			cd, err := parseCodeDirectory(r, index.Offset)
+			cd, err := parseCodeDirectory(r, index.Offset, uint32(len(cmddat)))
 			if err != nil {
 				return nil, err
 			}
@@ -255,13 +255,19 @@ func ParseCodeSignature(cmddat []byte) (*CodeSignature, error) {
 	return cs, nil
 }
 
-func parseCodeDirectory(r *bytes.Reader, offset uint32) (*types.CodeDirectory, error) {
+func parseCodeDirectory(r *bytes.Reader, offset uint32, maxSize uint32) (*types.CodeDirectory, error) {
 	var cd types.CodeDirectory
 	if err := binary.Read(r, binary.BigEndian, &cd.BlobHeader); err != nil {
 		return nil, err
 	}
 	if cd.BlobHeader.Magic != types.MAGIC_CODEDIRECTORY {
 		return nil, fmt.Errorf("invalid CSSLOT_(ALTERNATE_)CODEDIRECTORY blob magic: %#x", cd.BlobHeader.Magic)
+	}
+	if cd.BlobHeader.Length < uint32(binary.Size(cd.BlobHeader)) {
+		return nil, fmt.Errorf("invalid CodeDirectory length %d", cd.BlobHeader.Length)
+	}
+	if uint64(offset)+uint64(cd.BlobHeader.Length) > uint64(maxSize) {
+		return nil, fmt.Errorf("CodeDirectory length %d exceeds code signature data", cd.BlobHeader.Length)
 	}
 	if err := binary.Read(r, binary.BigEndian, &cd.Header.CdEarliest); err != nil {
 		return nil, err
